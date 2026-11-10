@@ -33,11 +33,11 @@
 #define BOOT_ACTION_CALIB   1
 #define BOOT_ACTION_MAZE    2
 
-/* 开始界面交互框: 先按这套尺寸画, 画完如果按钮位置变了再同步改这里 */
-#define BOOT_START_X        32
-#define BOOT_START_Y        176
-#define BOOT_START_W        176
-#define BOOT_START_H        50
+/* 开始界面交互框: 放在牛皮纸面板正中间 (面板 x=10..223, y=96..258) */
+#define BOOT_START_X        50
+#define BOOT_START_Y        154
+#define BOOT_START_W        134
+#define BOOT_START_H        46
 
 #define BOOT_CAL_X          192
 #define BOOT_CAL_Y          8
@@ -56,7 +56,7 @@
 
 /* 1=显示 START/CAL 的边框和长按进度条, 方便先对位置。
  * 你自己的 UI 画好后改成 0, 就不会再画这些参考框。 */
-#define BOOT_UI_GUIDES      1
+#define BOOT_UI_GUIDES      0
 
 /* 开始界面顶部星空 */
 #define BOOT_STAR_COUNT     12
@@ -67,6 +67,14 @@
 #define BOOT_STAR_GOLD      0xDD28
 #define BOOT_STAR_CREAM     0xF717
 #define BOOT_STAR_WHITE     0x9CF3
+
+/* 星空与木板交界上方的毛毛虫 */
+#define BOOT_CAT_Y          82       /* 身体基准 y, 在 y=92 天际线上方 */
+#define BOOT_CAT_X_MIN      8
+#define BOOT_CAT_X_MAX      (UI_SCREEN_W - 36)
+#define BOOT_CAT_STEP       2
+#define BOOT_CAT_TICK_MS    80
+#define BOOT_CAT_W          30
 
 static const UI_Rect s_start_rect =
 {
@@ -192,6 +200,114 @@ static void Boot_DrawStarSky(void)
     UI_Fill(0, 0, UI_SCREEN_W - 1, BOOT_STAR_Y_MAX - 1, BOOT_STAR_SKY);
     UI_Fill(0, BOOT_STAR_Y_MAX, UI_SCREEN_W - 1,
             BOOT_STAR_Y_MAX + 1, BOOT_STAR_HORIZON);
+}
+
+/*------------------------------ 毛毛虫 ------------------------------------*/
+/* 在星空和木板交界上方来回爬: 6 节身体 + 头 + 触角 + 小腿,
+ * 每 80ms 移动 2px, 上下用 8 相位的小波动模拟蠕动。 */
+static const s8 s_cat_wave[8] = { 0, 1, 2, 1, 0, -1, -2, -1 };
+static s16 s_cat_x = BOOT_CAT_X_MIN;
+static s8  s_cat_dir = 1;
+static u8  s_cat_phase = 0;
+static u32 s_cat_last_ms = 0;
+
+static void Boot_CatDraw(s16 x, s8 dir, u8 phase)
+{
+    u8 i;
+    s16 sx;
+    s16 sy;
+    s16 hx;
+    s16 hy;
+    u16 body;
+
+    for (i = 0; i < 6; i++)
+    {
+        if (dir > 0) sx = (s16)(x + (s16)i * 4);
+        else         sx = (s16)(x + 20 - (s16)i * 4);
+
+        sy = (s16)(BOOT_CAT_Y + s_cat_wave[(phase + i * 2) & 7]);
+        body = (i & 1) ? PIX_GREEN : PIX_DEEP_GREEN;
+
+        UI_Fill((u16)sx, (u16)sy, (u16)(sx + 3), (u16)(sy + 4), body);
+
+        /* 每两节画一条小腿 */
+        if (i & 1)
+        {
+            UI_Fill((u16)(sx + 1), (u16)(sy + 5),
+                    (u16)(sx + 1), (u16)(sy + 6), PIX_WOOD_DARK);
+        }
+    }
+
+    hx = (dir > 0) ? (s16)(x + 22) : x;
+    hy = (s16)(BOOT_CAT_Y + s_cat_wave[(phase + 3) & 7]);
+
+    UI_Fill((u16)hx, (u16)hy, (u16)(hx + 4), (u16)(hy + 5), PIX_GREEN);
+
+    /* 眼睛 */
+    UI_Fill((u16)(hx + 1), (u16)(hy + 2),
+            (u16)(hx + 1), (u16)(hy + 3), PIX_WOOD_DARK);
+    UI_Fill((u16)(hx + 3), (u16)(hy + 2),
+            (u16)(hx + 3), (u16)(hy + 3), PIX_WOOD_DARK);
+
+    /* 触角 */
+    UI_Fill((u16)(hx + 1), (u16)(hy - 2),
+            (u16)(hx + 1), (u16)(hy - 1), PIX_GOLD);
+    UI_Fill((u16)(hx + 3), (u16)(hy - 2),
+            (u16)(hx + 3), (u16)(hy - 1), PIX_GOLD);
+}
+
+static void Boot_CatErase(void)
+{
+    u8 i;
+
+    /* 只清毛毛虫的包围盒, 然后把可能被盖住的星星补回来 */
+    UI_Fill((u16)(s_cat_x - 2), (u16)(BOOT_CAT_Y - 4),
+            (u16)(s_cat_x + BOOT_CAT_W), (u16)(BOOT_CAT_Y + 9),
+            BOOT_STAR_SKY);
+
+    for (i = 0; i < BOOT_STAR_COUNT; i++)
+    {
+        Boot_StarPaint(&s_stars[i], s_stars[i].color);
+    }
+}
+
+static void Boot_CatInit(void)
+{
+    s_cat_x = 20;
+    s_cat_dir = 1;
+    s_cat_phase = 0;
+    s_cat_last_ms = TICK_Now();
+
+    Boot_CatDraw(s_cat_x, s_cat_dir, s_cat_phase);
+}
+
+static void Boot_CatTick(void)
+{
+    u32 now = TICK_Now();
+
+    if ((u32)(now - s_cat_last_ms) < BOOT_CAT_TICK_MS)
+    {
+        return;
+    }
+    s_cat_last_ms = now;
+
+    Boot_CatErase();
+
+    s_cat_x = (s16)(s_cat_x + (s16)(s_cat_dir * BOOT_CAT_STEP));
+    if (s_cat_x <= BOOT_CAT_X_MIN)
+    {
+        s_cat_x = BOOT_CAT_X_MIN;
+        s_cat_dir = 1;
+    }
+    else if (s_cat_x >= BOOT_CAT_X_MAX)
+    {
+        s_cat_x = BOOT_CAT_X_MAX;
+        s_cat_dir = -1;
+    }
+
+    s_cat_phase = (u8)((s_cat_phase + 1) & 7);
+
+    Boot_CatDraw(s_cat_x, s_cat_dir, s_cat_phase);
 }
 
 /*------------------------------ 羊皮纸落叶 --------------------------------*/
@@ -385,20 +501,20 @@ static void Boot_DrawProgress(u32 held_ms)
     UI_Fill(BOOT_START_X, BOOT_PROGRESS_Y,
             (u16)(BOOT_START_X + BOOT_START_W - 1),
             (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-            UI_COLOR_BG);
+            PIX_WOOD_DARK);
 
     if (w > 0)
     {
         UI_Fill(BOOT_START_X, BOOT_PROGRESS_Y,
                 (u16)(BOOT_START_X + w - 1),
                 (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-                UI_COLOR_ACCENT);
+                PIX_GREEN);
     }
 
     UI_Frame(BOOT_START_X, BOOT_PROGRESS_Y,
              (u16)(BOOT_START_X + BOOT_START_W - 1),
              (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-             UI_COLOR_BORDER);
+             PIX_GOLD);
 }
 
 static void Boot_ClearProgress(void)
@@ -420,100 +536,30 @@ static void Boot_DrawTouchStatus(u8 calibrated, u8 pressed, u16 x, u16 y)
 }
 #endif
 
-static const unsigned char s_boot_hanzi[4][116] =
+static void Boot_DrawStartBox(void)
 {
-    { /* 开 */
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x03, 0xFF, 0xFF, 0xC0, 0x07, 0xFF, 0xFF, 0xC0, 0x04, 0x1C,
-        0x38, 0x00, 0x00, 0x1C, 0x38, 0x00, 0x00, 0x1C, 0x38, 0x00, 0x1F, 0xFF, 0xFF, 0xFC,
-        0x7F, 0xFF, 0xFF, 0xFE, 0x78, 0x1C, 0x38, 0xFC, 0x00, 0x1C, 0x38, 0x00, 0x00, 0x38,
-        0x38, 0x00, 0x00, 0x38, 0x38, 0x00, 0x00, 0x78, 0x38, 0x00, 0x01, 0xF0, 0x38, 0x00,
-        0x1F, 0xE0, 0x38, 0x00, 0x1F, 0x80, 0x38, 0x00, 0x06, 0x00, 0x38, 0x00, 0x00, 0x00,
-        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    },
-    { /* 始 */
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x30, 0x0C, 0x00, 0x00, 0x70, 0x1E, 0x00, 0x00, 0xF0, 0x3C, 0x00, 0x00, 0xE0,
-        0x71, 0xC0, 0x01, 0xC0, 0xE1, 0xF0, 0x3F, 0xDB, 0xC0, 0xF8, 0x7F, 0xFF, 0xFB, 0xBC,
-        0x47, 0x1D, 0x7F, 0x84, 0x07, 0x1C, 0x04, 0x00, 0x07, 0x39, 0xC4, 0x70, 0x03, 0xB9,
-        0xFF, 0xF0, 0x01, 0xF1, 0xC0, 0xF0, 0x00, 0xF1, 0xC0, 0x70, 0x03, 0xF9, 0xC0, 0x70,
-        0x7F, 0x9E, 0xC0, 0x70, 0x7F, 0x06, 0xFF, 0xF0, 0x00, 0x00, 0xFF, 0xE0, 0x00, 0x00,
-        0x40, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    },
-    { /* 探 */
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x01, 0xC3, 0x00, 0x00, 0x01, 0xC7, 0xFF, 0xF0, 0x01, 0xC7, 0x00, 0x70, 0x01, 0xC6,
-        0x26, 0x30, 0x1F, 0xF6, 0x77, 0x10, 0x1D, 0xC6, 0xC1, 0x90, 0x01, 0xC2, 0x18, 0x10,
-        0x01, 0xF0, 0x1C, 0x00, 0x1F, 0xE3, 0xFF, 0xF0, 0x3E, 0xC7, 0xFF, 0xC0, 0x10, 0xC0,
-        0x7E, 0x00, 0x00, 0xC0, 0xFF, 0x80, 0x00, 0xC3, 0xDD, 0xE0, 0x00, 0xC7, 0x9C, 0x7C,
-        0x01, 0xFE, 0x1C, 0x3E, 0x3F, 0xC0, 0x1C, 0x1C, 0x1F, 0x80, 0x1C, 0x00, 0x00, 0x00,
-        0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    },
-    { /* 险 */
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x60, 0x00, 0x08, 0x00, 0x3F, 0xF0, 0xF0, 0x00, 0x3E, 0x31, 0xFC, 0x00, 0x0E, 0x33,
-        0x8F, 0x80, 0x0E, 0x67, 0x03, 0xF0, 0x0E, 0xCE, 0x00, 0xFE, 0x0F, 0xFB, 0xFE, 0x3C,
-        0x0E, 0x67, 0xFF, 0x00, 0x0E, 0x30, 0x00, 0x00, 0x0E, 0x30, 0x63, 0x80, 0x0E, 0x77,
-        0x73, 0x80, 0x0F, 0xE3, 0x33, 0x00, 0x0F, 0x03, 0x97, 0x00, 0x0E, 0x00, 0x86, 0x00,
-        0x0E, 0x00, 0x04, 0x00, 0x0E, 0x1F, 0xFF, 0xF0, 0x0E, 0x1F, 0xFF, 0xF0, 0x0C, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    },
-};
+    /* 牛皮纸中间的木质开始框: 深木底 + 金边 + 米白 START */
+    UI_Fill(s_start_rect.x, s_start_rect.y,
+            (u16)(s_start_rect.x + s_start_rect.w - 1),
+            (u16)(s_start_rect.y + s_start_rect.h - 1),
+            PIX_WOOD_MID);
 
-static void Boot_DrawHanzi32x29(u16 x, u16 y,
-                                const unsigned char *glyph,
-                                u16 color)
-{
-    u8 row;
-    u8 col;
-    u8 start;
-    u8 byte;
+    UI_Frame(s_start_rect.x, s_start_rect.y,
+             (u16)(s_start_rect.x + s_start_rect.w - 1),
+             (u16)(s_start_rect.y + s_start_rect.h - 1),
+             PIX_GOLD);
 
-    for (row = 0; row < 29; row++)
-    {
-        col = 0;
-        while (col < 32)
-        {
-            while (col < 32)
-            {
-                byte = glyph[row * 4 + col / 8];
-                if (byte & (0x80 >> (col % 8))) break;
-                col++;
-            }
-            if (col >= 32) break;
-            start = col;
-            while (col < 32)
-            {
-                byte = glyph[row * 4 + col / 8];
-                if (!(byte & (0x80 >> (col % 8)))) break;
-                col++;
-            }
-            UI_Fill((u16)(x + start), (u16)(y + row),
-                    (u16)(x + col - 1), (u16)(y + row), color);
-        }
-    }
+    UI_Frame((u16)(s_start_rect.x + 2), (u16)(s_start_rect.y + 2),
+             (u16)(s_start_rect.x + s_start_rect.w - 3),
+             (u16)(s_start_rect.y + s_start_rect.h - 3),
+             PIX_WOOD_DARK);
+
+    UI_TextColor((u16)(s_start_rect.x + (s_start_rect.w - 60) / 2),
+                 (u16)(s_start_rect.y + (s_start_rect.h - UI_FONT_L) / 2),
+                 60, UI_FONT_L, UI_FONT_L,
+                 PIX_CREAM, PIX_WOOD_MID, "START");
 }
 
-static void Boot_DrawStartChinese(void)
-{
-    u16 x = (u16)(s_start_rect.x + (s_start_rect.w - 128) / 2);
-    u16 y = (u16)(s_start_rect.y + (s_start_rect.h - 29) / 2);
-    u8 i;
-
-    for (i = 0; i < 4; i++)
-    {
-        Boot_DrawHanzi32x29((u16)(x + i * 32), y,
-                            s_boot_hanzi[i], PIX_CREAM);
-    }
-}
 static void Boot_DrawSplash(u8 calibrated)
 {
     (void)calibrated;
@@ -521,15 +567,15 @@ static void Boot_DrawSplash(u8 calibrated)
     UI_DrawPixelBackground();
     Boot_DrawStarSky();
     Boot_StarsInit();
-	Boot_DrawParchmentPanel();
+    Boot_CatInit();
+    Boot_DrawParchmentPanel();
     Boot_LeavesInit();
 
-	UI_DrawButton(&s_start_rect, "", 0);
-	UI_DrawButton(&s_calib_rect, "CAL", 0);
+    Boot_DrawStartBox();
+    UI_DrawButton(&s_calib_rect, "CAL", 0);
 
 #if BOOT_UI_GUIDES
-    /* 临时参考框: 只画交互区域, 不画旧版文字。
-     * 你自己的 UI 画好后把 BOOT_UI_GUIDES 改成 0。 */
+    /* 临时参考框: 只画交互区域, 不画旧版文字。 */
     UI_Frame(s_start_rect.x, s_start_rect.y,
              (u16)(s_start_rect.x + s_start_rect.w - 1),
              (u16)(s_start_rect.y + s_start_rect.h - 1),
@@ -540,15 +586,6 @@ static void Boot_DrawSplash(u8 calibrated)
              (u16)(s_calib_rect.y + s_calib_rect.h - 1),
              UI_COLOR_BORDER);
 #endif
-
-    /* 示例文字: 先放在交互框正中间。
-     * 你导入自己的字库后，把下面两行换成自己的绘制函数即可。 */
-    Boot_DrawStartChinese();
-
-    UI_TextColor((u16)(s_calib_rect.x + (s_calib_rect.w - 18) / 2),
-                 (u16)(s_calib_rect.y + (s_calib_rect.h - UI_FONT_S) / 2),
-                 18, UI_FONT_S, UI_FONT_S,
-                 UI_COLOR_TEXT, UI_COLOR_BG, "CAL");
 
     Boot_ClearProgress();
 }
@@ -609,6 +646,7 @@ static u8 Boot_WaitAction(void)
 
         Boot_StarsTick();
         Boot_LeavesTick();
+        Boot_CatTick();
 
         if (pressed)
         {
