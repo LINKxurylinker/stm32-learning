@@ -50,6 +50,7 @@ static const UI_PageId s_page_order[] =
     PAGE_STOPWATCH,
     PAGE_SWEEP,
     PAGE_SPWM,
+    PAGE_MAZE,
     PAGE_SNAKE
 };
 #define UI_PAGE_ORDER_COUNT (sizeof(s_page_order) / sizeof(s_page_order[0]))
@@ -60,7 +61,7 @@ static u16 s_last_y = 0;
 static u16 s_down_x = 0;
 static u16 s_down_y = 0;
 static u8  s_keypad_full = 0;    /* 键盘底板/按键是否已经画过 */
-static u8  s_nav_visible = 1;    /* 0=底部 BACK/NEXT 导航条隐藏(贪吃蛇全屏) */
+static u8  s_nav_visible = 1;    /* 0=底部 BACK/NEXT 导航条隐藏(全屏游戏) */
 
 /*------------------------------ 文字/图形工具 ------------------------------*/
 void UI_TextColor(u16 x, u16 y, u16 w, u16 h, u8 size,
@@ -256,8 +257,8 @@ void UI_GoPage(UI_PageId id)
     UI_SetPage(id);
 }
 
-/* 清空返回历史后切页。给全屏彩蛋的 BACK 用:
- * 退出贪吃蛇后回到 PWM 主界面, 再按 BACK 就回开始界面, 不会又掉进游戏。 */
+/* 清空返回历史后切页。给全屏游戏页的 BACK 用:
+ * 退出迷宫/贪吃蛇后回到 PWM 主界面, 再按 BACK 就回开始界面, 不会又掉进游戏。 */
 void UI_GoRoot(UI_PageId id)
 {
     if (id >= PAGE_COUNT) return;
@@ -272,7 +273,7 @@ void UI_GoRoot(UI_PageId id)
     UI_SetPage(id);
 }
 
-/* 显示/隐藏底部 BACK/NEXT 导航条。贪吃蛇页面进入时隐藏, 换页时
+/* 显示/隐藏底部 BACK/NEXT 导航条。MAZE/SNAKE 全屏页进入时隐藏, 换页时
  * UI_SetPage 会自动恢复成 1, 所以其他页面不受影响。 */
 void UI_NavSetVisible(u8 visible)
 {
@@ -627,6 +628,49 @@ void UI_Keypad_Draw(void)
     UI_NumColor(8, 38, (u32)((g_keypad.value < 0) ? 0 : g_keypad.value),
                 g_keypad.max_digits, UI_FONT_L,
                 UI_COLOR_EDIT, UI_COLOR_PANEL);
+}
+
+void UI_DrawPixelBackground(void)
+{
+    u16 i;
+    u16 y;
+    u16 x;
+
+    /* 底色 */
+    UI_Fill(0, 0, UI_SCREEN_W - 1, UI_SCREEN_H - 1,
+            PIX_WOOD_DARK);
+
+    /* 8 块横向木板，每块 40px */
+    for (i = 0; i < 8; i++)
+    {
+        y = (u16)(i * 40);
+
+        /* 木板缝 */
+        UI_Fill(0, y, UI_SCREEN_W - 1, y + 1,
+                PIX_WOOD_SEAM);
+
+        /* 木板上沿高光 */
+        UI_Fill(0, y + 2, UI_SCREEN_W - 1, y + 2,
+                PIX_WOOD_MID);
+
+        /* 竖向接缝，左右交错 */
+        x = (i & 1) ? 64 : 176;
+
+        UI_Fill(x, y + 3, x + 1, y + 38,
+                PIX_WOOD_SEAM);
+
+        UI_Fill(x + 2, y + 3, x + 2, y + 38,
+                PIX_WOOD_MID);
+
+        /* 木纹短线 */
+        UI_Fill(16,  y + 12, 63,  y + 12, PIX_WOOD_SEAM);
+        UI_Fill(96,  y + 26, 151, y + 26, PIX_WOOD_MID);
+        UI_Fill(168, y + 34, 215, y + 34, PIX_WOOD_SEAM);
+
+        /* 节疤 */
+        UI_Fill(112, y + 14, 115, y + 15, PIX_WOOD_SEAM);
+        UI_Fill(113, y + 16, 114, y + 16, PIX_WOOD_LIGHT);
+    }
 }
 
 u8 UI_Keypad_OnTouch(const UI_Event *ev)

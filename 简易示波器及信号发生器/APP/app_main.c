@@ -4,10 +4,12 @@
 #include "bsp_tick.h"
 #include "bsp_pwm.h"
 #include "bsp_capture.h"
+#include "mpu6050.h"
 #include "bsp_spwm.h"
 #include "app_stopwatch.h"
 #include "app_sweep.h"
 #include "app_snake.h"
+#include "app_maze.h"
 #include "ui_core.h"
 #include "delay.h"
 #include "usart.h"
@@ -46,7 +48,7 @@ void APP_Init(void)
     printf("====================================\r\n");
 #endif
 
-    /* 1ms 节拍: 给 UI/秒表/扫频/贪吃蛇用 */
+    /* 1ms 节拍: 给 UI/秒表/扫频/迷宫/贪吃蛇用 */
     TICK_Init();
 
     /* 屏幕: 必须在触摸之前初始化, 因为触摸校准要画十字 */
@@ -58,6 +60,9 @@ void APP_Init(void)
            (unsigned)tftlcd_data.dir);
 #endif
 
+    /* MPU6050: 开始界面落叶风场 */
+    MPU6050_Init();
+    
     /* 先把屏幕和开机界面跑起来, 再初始化 PWM/CAP。
      * 这样即使 PWM 初始化有问题, 也能先看到 WELCOME, 不会停在白屏。 */
     start_page = BOOT_Run();
@@ -84,8 +89,9 @@ void APP_Init(void)
     STOPWATCH_Init();
     SWEEP_Init();
     SNAKE_Init();
+    MAZE_Init();
 
-    /* UI: 页面管理 + 开机目标页 (短击=PAGE_PWM, 长按=PAGE_SNAKE) */
+    /* UI: 页面管理 + 开机目标页 (短击=PAGE_PWM, 长按=PAGE_MAZE) */
     UI_InitAt(start_page);
 
 #if APP_DEBUG_UART

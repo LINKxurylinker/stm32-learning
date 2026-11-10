@@ -6,6 +6,7 @@
 #include "app_stopwatch.h"
 #include "app_sweep.h"
 #include "app_snake.h"
+#include "app_maze.h"
 #include "tftlcd.h"
 
 /*==============================================================================
@@ -14,7 +15,7 @@
  * 最小可交互 UI:
  *   - 目前只保留 PWM 主界面; 主菜单/占位页已删除, 后续再加
  *   - 每页顶部有状态栏, 非主界面页底部有统一的 BACK 按钮 (在 ui_core.c 里画)
- *   - PWM/CAPTURE/TIMER/SWEEP/SPWM/SNAKE 页先显示关键数据
+ *   - PWM/CAPTURE/TIMER/SWEEP/SPWM/MAZE/SNAKE 页先显示关键数据
  *   - 页面里的按钮/键盘/滑条只留了最小接口, 你可以继续美化
  *
  * 规则:
@@ -25,6 +26,7 @@
  *============================================================================*/
 
 /*============================== 小工具 ====================================*/
+
 static void Page_Begin(const char *title)
 {
     /* 换页/关键盘时才整屏清一次; 周期性刷新只重画控件, 避免闪屏 */
@@ -1184,8 +1186,473 @@ static void Spwm_Event(const UI_Event *ev)
     }
 }
 
+/*============================== Maze ======================================*/
+/* 开机长按 START 3 秒的彩蛋。
+ *
+ * 布局(竖屏 240x320, 进入本页时隐藏底部导航条):
+ *   y=0..21    状态栏: MAZE + 状态 + 步数 + 时间
+ *   y=26..235  21x21 迷宫 (每格 10px, 210x210)
+ *   y=250..271 第一排: AUTO / PAUSE / NEW / SNAKE / BACK
+ *   y=275..296 方向键: 上
+ *   y=298..319 方向键: 左 / 下 / 右
+ *
+ * 触摸: 在迷宫上滑动 = 走一格; 也可以点方向键。
+ * 按键: WK_UP=上, KEY0=左, KEY1=下, KEY2=右 (app_maze.c 里轮询)。
+ * 自动: AUTO 用 A* 求最短路径后回放, PAUSE 可暂停; NEW 换新迷宫。
+ * SNAKE: 贪吃蛇仍是最后一页, 从本页点 SNAKE 进去。 */
+#define MZ_BX             15
+#define MZ_BY             26
+#define MZ_CELL           MAZE_CELL_PX
+#define MZ_BOARD_W        (MAZE_GRID_W * MAZE_CELL_PX)
+#define MZ_BOARD_H        (MAZE_GRID_H * MAZE_CELL_PX)
+
+#define MZ_ROW1_Y         250
+#define MZ_ROW2_Y         275
+#define MZ_ROW3_Y         298
+#define MZ_BTN_H          22
+#define MZ_UTIL_W         42
+#define MZ_UTIL_GAP       4
+#define MZ_UTIL_X0        4
+#define MZ_ARROW_W        52
+
+#define MZ_BG_PATH        0x0000
+#define MZ_WALL           0x2945
+#define MZ_WALL_HI        0x4A69
+#define MZ_START          0xFD20
+#define MZ_EXIT           0x07E0
+#define MZ_EXIT_DARK      0x03E0
+#define MZ_PLAYER         0x07FF
+
+static const UI_Rect s_mz_auto  = { MZ_UTIL_X0 + (MZ_UTIL_W + MZ_UTIL_GAP) * 0, MZ_ROW1_Y, MZ_UTIL_W, MZ_BTN_H };
+static const UI_Rect s_mz_pause = { MZ_UTIL_X0 + (MZ_UTIL_W + MZ_UTIL_GAP) * 1, MZ_ROW1_Y, MZ_UTIL_W, MZ_BTN_H };
+static const UI_Rect s_mz_new   = { MZ_UTIL_X0 + (MZ_UTIL_W + MZ_UTIL_GAP) * 2, MZ_ROW1_Y, MZ_UTIL_W, MZ_BTN_H };
+static const UI_Rect s_mz_snake = { MZ_UTIL_X0 + (MZ_UTIL_W + MZ_UTIL_GAP) * 3, MZ_ROW1_Y, MZ_UTIL_W, MZ_BTN_H };
+static const UI_Rect s_mz_back  = { MZ_UTIL_X0 + (MZ_UTIL_W + MZ_UTIL_GAP) * 4, MZ_ROW1_Y, MZ_UTIL_W, MZ_BTN_H };
+
+static const UI_Rect s_mz_up    = {  94, MZ_ROW2_Y, MZ_ARROW_W, MZ_BTN_H };
+static const UI_Rect s_mz_left  = {  36, MZ_ROW3_Y, MZ_ARROW_W, MZ_BTN_H };
+static const UI_Rect s_mz_down  = {  94, MZ_ROW3_Y, MZ_ARROW_W, MZ_BTN_H };
+static const UI_Rect s_mz_right = { 152, MZ_ROW3_Y, MZ_ARROW_W, MZ_BTN_H };
+static const UI_Rect s_mz_board = { MZ_BX, MZ_BY, MZ_BOARD_W, MZ_BOARD_H };
+
+static u8 s_mz_full = 1;          /* 1=下一帧整页重画 */
+static u8 s_mz_swipe_done = 0;    /* 一次滑动只走一格 */
+
+static u16 Mz_CellOf(u8 x, u8 y)
+{
+    return (u16)((u16)y * MAZE_GRID_W + x);
+}
+
+static void Mz_DrawCell(u16 cell)
+{
+    u8  cx;
+    u8  cy;
+    u16 x;
+    u16 y;
+    u16 px;
+    u16 py;
+
+    if (cell >= (u16)(MAZE_GRID_W * MAZE_GRID_H)) return;
+
+    cx = (u8)(cell % MAZE_GRID_W);
+    cy = (u8)(cell / MAZE_GRID_W);
+    x = (u16)(MZ_BX + (u16)cx * MZ_CELL);
+    y = (u16)(MZ_BY + (u16)cy * MZ_CELL);
+
+    if (MAZE_GetCell(cx, cy) != 0)
+    {
+        /* 墙: 深灰块 + 顶部亮线, 和黑色通道区分开 */
+        UI_Fill(x, y, (u16)(x + MZ_CELL - 1), (u16)(y + MZ_CELL - 1), MZ_WALL);
+        UI_Fill(x, y, (u16)(x + MZ_CELL - 1), y, MZ_WALL_HI);
+        return;
+    }
+
+    UI_Fill(x, y, (u16)(x + MZ_CELL - 1), (u16)(y + MZ_CELL - 1), MZ_BG_PATH);
+
+    /* 起点标记 */
+    if (cx == 1 && cy == 1)
+    {
+        UI_Fill((u16)(x + 3), (u16)(y + 3), (u16)(x + 6), (u16)(y + 6), MZ_START);
+    }
+
+    /* 出口: 绿色方块 */
+    if (cx == MAZE_GetGoalX() && cy == MAZE_GetGoalY())
+    {
+        UI_Fill((u16)(x + 1), (u16)(y + 1), (u16)(x + 8), (u16)(y + 8), MZ_EXIT_DARK);
+        UI_Fill((u16)(x + 2), (u16)(y + 2), (u16)(x + 7), (u16)(y + 7), MZ_EXIT);
+    }
+
+    /* 玩家: 青色方块, 画在出口/起点上面 */
+    if (cx == MAZE_GetPlayerX() && cy == MAZE_GetPlayerY())
+    {
+        px = (u16)(x + 1);
+        py = (u16)(y + 1);
+        UI_Fill(px, py, (u16)(px + 7), (u16)(py + 7), MZ_PLAYER);
+        UI_Fill((u16)(px + 2), (u16)(py + 2), (u16)(px + 3), (u16)(py + 3), UI_COLOR_BG);
+        UI_Fill((u16)(px + 5), (u16)(py + 2), (u16)(px + 6), (u16)(py + 3), UI_COLOR_BG);
+    }
+}
+
+static void Mz_DrawBoardFull(void)
+{
+    u8  cx;
+    u8  cy;
+
+    for (cy = 0; cy < MAZE_GRID_H; cy++)
+    {
+        for (cx = 0; cx < MAZE_GRID_W; cx++)
+        {
+            Mz_DrawCell(Mz_CellOf(cx, cy));
+        }
+    }
+
+    UI_Frame((u16)(MZ_BX - 1), (u16)(MZ_BY - 1),
+             (u16)(MZ_BX + MZ_BOARD_W), (u16)(MZ_BY + MZ_BOARD_H),
+             UI_COLOR_ACCENT);
+}
+
+static const char *Mz_StateStr(void)
+{
+    if (MAZE_GetAuto() && MAZE_GetState() == MAZE_RUNNING) return "AUTO";
+
+    switch (MAZE_GetState())
+    {
+        case MAZE_RUNNING: return "RUN";
+        case MAZE_PAUSED:  return "PAUSED";
+        case MAZE_WIN:     return "WIN";
+        default:           return "READY";
+    }
+}
+
+static u16 Mz_StateColor(void)
+{
+    switch (MAZE_GetState())
+    {
+        case MAZE_RUNNING: return MAZE_GetAuto() ? UI_COLOR_OK : UI_COLOR_VALUE;
+        case MAZE_PAUSED:  return UI_COLOR_EDIT;
+        case MAZE_WIN:     return UI_COLOR_OK;
+        default:           return UI_COLOR_MUTED;
+    }
+}
+
+static void Mz_DrawHud(void)
+{
+    u32 sec;
+
+    UI_Fill(52, 2, 238, (u16)(UI_STATUS_H - 3), UI_COLOR_PANEL);
+
+    UI_TextColor(52, 4, 70, 14, UI_FONT_S,
+                 Mz_StateColor(), UI_COLOR_PANEL, Mz_StateStr());
+
+    UI_TextColor(128, 4, 10, 14, UI_FONT_S,
+                 UI_COLOR_MUTED, UI_COLOR_PANEL, "S:");
+    UI_NumColor(140, 3, (u32)MAZE_GetSteps(), 3, UI_FONT_S,
+                UI_COLOR_VALUE, UI_COLOR_PANEL);
+
+    sec = MAZE_GetElapsedMs() / 1000UL;
+    if (sec > 999UL) sec = 999UL;
+
+    UI_TextColor(166, 4, 10, 14, UI_FONT_S,
+                 UI_COLOR_MUTED, UI_COLOR_PANEL, "T:");
+    UI_NumColor(178, 3, sec, 3, UI_FONT_S,
+                UI_COLOR_VALUE, UI_COLOR_PANEL);
+}
+
+static void Mz_DrawButtons(void)
+{
+    UI_DrawButton(&s_mz_auto, "AUTO", (u8)(MAZE_GetAuto() ? 1 : 0));
+    UI_DrawButton(&s_mz_pause,
+                  (MAZE_GetState() == MAZE_PAUSED) ? "RUN" : "PAUSE", 0);
+    UI_DrawButton(&s_mz_new, "NEW", 0);
+    UI_DrawButton(&s_mz_snake, "SNAKE", 0);
+    UI_DrawButton(&s_mz_back, "BACK", 0);
+
+    UI_DrawButton(&s_mz_up, "UP", 0);
+    UI_DrawButton(&s_mz_left, "LEFT", 0);
+    UI_DrawButton(&s_mz_down, "DOWN", 0);
+    UI_DrawButton(&s_mz_right, "RIGHT", 0);
+}
+
+static void Mz_TextCenter(u16 y, u8 font, u16 color, const char *s)
+{
+    u8  len = 0;
+    u16 w;
+    u16 x;
+
+    while (s[len] != '\0') len++;
+    w = (u16)len * (u16)(font / 2);
+    x = (u16)((UI_SCREEN_W - w) / 2);
+
+    UI_TextColor(x, y, (u16)(w + 2), font, font, color, UI_COLOR_PANEL, s);
+}
+
+static void Mz_DrawOverlay(void)
+{
+    const char *title;
+    const char *line2;
+    const char *line3;
+    u16 color;
+
+    if (MAZE_GetState() == MAZE_PAUSED)
+    {
+        title = "PAUSED";
+        line2 = "PAUSE = RESUME";
+        line3 = MAZE_GetAuto() ? "A* AUTO MODE" : "SWIPE OR ARROW KEYS";
+        color = UI_COLOR_EDIT;
+    }
+    else if (MAZE_GetState() == MAZE_WIN)
+    {
+        title = "MAZE SOLVED!";
+        line2 = MAZE_GetAuto() ? "A* PATH COMPLETE" : "YOU FOUND THE EXIT";
+        line3 = "NEW = PLAY AGAIN";
+        color = UI_COLOR_OK;
+    }
+    else
+    {
+        return;
+    }
+
+    UI_Fill(28, 106, 211, 206, UI_COLOR_PANEL);
+    UI_Frame(28, 106, 211, 206, UI_COLOR_ACCENT);
+
+    Mz_TextCenter(118, UI_FONT_L, color, title);
+    Mz_TextCenter(152, UI_FONT_S, UI_COLOR_TEXT, line2);
+    Mz_TextCenter(174, UI_FONT_S, UI_COLOR_MUTED, line3);
+}
+
+static void Mz_DrawFull(void)
+{
+    g_ui_full_redraw = 1;
+    Page_Begin("MAZE");
+
+    Mz_DrawHud();
+    Mz_DrawBoardFull();
+    Mz_DrawButtons();
+    Mz_DrawOverlay();
+
+    MAZE_ClearDirty();
+    s_mz_full = 0;
+}
+
+static void Mz_Enter(void)
+{
+    UI_NavSetVisible(0);        /* 全屏游戏: 不要底部 BACK/NEXT */
+    s_mz_swipe_done = 0;
+
+    /* 从别的页面回来先暂停; 第一次进来(IDLE)或已经通关则开新局 */
+    if (MAZE_GetState() == MAZE_RUNNING)
+    {
+        MAZE_TogglePause();
+    }
+    if (MAZE_GetState() == MAZE_IDLE || MAZE_GetState() == MAZE_WIN)
+    {
+        MAZE_Start();
+    }
+
+    s_mz_full = 1;
+    MAZE_ClearDirty();
+    UI_MarkDirty();
+}
+
+static void Mz_Leave(void)
+{
+    if (MAZE_GetState() == MAZE_RUNNING)
+    {
+        MAZE_TogglePause();
+    }
+    s_mz_full = 1;
+}
+
+static void Mz_Draw(void)
+{
+    if (g_ui_full_redraw)
+    {
+        g_ui_full_redraw = 0;
+        s_mz_full = 1;
+    }
+
+    if (s_mz_full)
+    {
+        Mz_DrawFull();
+        return;
+    }
+
+    Mz_DrawHud();
+    Mz_DrawButtons();
+}
+
+static void Mz_Event(const UI_Event *ev)
+{
+    int dx;
+    int dy;
+
+    if (ev->type == UI_EV_UP)
+    {
+        s_mz_swipe_done = 0;
+        return;
+    }
+
+    /* 滑动走一格: 从按下点算位移, 一次手势只走一格 */
+    if (ev->type == UI_EV_MOVE)
+    {
+        if (s_mz_swipe_done) return;
+        if (MAZE_GetAuto() || MAZE_GetState() != MAZE_RUNNING) return;
+        if (!UI_HitTest(&s_mz_board, ev->down_x, ev->down_y)) return;
+
+        dx = (int)ev->x - (int)ev->down_x;
+        dy = (int)ev->y - (int)ev->down_y;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+
+        if (dx < 12 && dy < 12) return;
+
+        if (dx > dy)
+        {
+            MAZE_Move(((int)ev->x >= (int)ev->down_x) ? MAZE_RIGHT : MAZE_LEFT);
+        }
+        else
+        {
+            MAZE_Move(((int)ev->y >= (int)ev->down_y) ? MAZE_DOWN : MAZE_UP);
+        }
+
+        s_mz_swipe_done = 1;
+        if (MAZE_GetState() == MAZE_WIN) s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+
+    if (ev->type != UI_EV_DOWN) return;
+
+    if (Meter_HitPad(&s_mz_back, ev->x, ev->y, 2, 2))
+    {
+        UI_GoRoot(PAGE_PWM);
+        return;
+    }
+
+    if (Meter_HitPad(&s_mz_snake, ev->x, ev->y, 2, 2))
+    {
+        /* 贪吃蛇仍是最后一页; 从迷宫进去, BACK 再回主界面 */
+        UI_GoPage(PAGE_SNAKE);
+        return;
+    }
+
+    if (Meter_HitPad(&s_mz_auto, ev->x, ev->y, 2, 2))
+    {
+        /* 自动进行中/暂停时按 AUTO = 切回手动; 其它情况从当前位置开始 A* */
+        if (MAZE_GetAuto() &&
+            (MAZE_GetState() == MAZE_RUNNING || MAZE_GetState() == MAZE_PAUSED))
+        {
+            MAZE_SetAuto(0);
+        }
+        else
+        {
+            MAZE_StartAuto();
+        }
+        s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+
+    if (Meter_HitPad(&s_mz_pause, ev->x, ev->y, 2, 2))
+    {
+        if (MAZE_GetState() == MAZE_RUNNING || MAZE_GetState() == MAZE_PAUSED)
+        {
+            MAZE_TogglePause();
+        }
+        s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+
+    if (Meter_HitPad(&s_mz_new, ev->x, ev->y, 2, 2))
+    {
+        MAZE_Start();
+        s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+
+    if (Meter_HitPad(&s_mz_up, ev->x, ev->y, 2, 2))
+    {
+        if (!MAZE_GetAuto() && MAZE_GetState() == MAZE_RUNNING) MAZE_Move(MAZE_UP);
+        if (MAZE_GetState() == MAZE_WIN) s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+    if (Meter_HitPad(&s_mz_left, ev->x, ev->y, 2, 2))
+    {
+        if (!MAZE_GetAuto() && MAZE_GetState() == MAZE_RUNNING) MAZE_Move(MAZE_LEFT);
+        if (MAZE_GetState() == MAZE_WIN) s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+    if (Meter_HitPad(&s_mz_down, ev->x, ev->y, 2, 2))
+    {
+        if (!MAZE_GetAuto() && MAZE_GetState() == MAZE_RUNNING) MAZE_Move(MAZE_DOWN);
+        if (MAZE_GetState() == MAZE_WIN) s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+    if (Meter_HitPad(&s_mz_right, ev->x, ev->y, 2, 2))
+    {
+        if (!MAZE_GetAuto() && MAZE_GetState() == MAZE_RUNNING) MAZE_Move(MAZE_RIGHT);
+        if (MAZE_GetState() == MAZE_WIN) s_mz_full = 1;
+        UI_MarkDirty();
+        return;
+    }
+
+    if (UI_HitTest(&s_mz_board, ev->x, ev->y))
+    {
+        s_mz_swipe_done = 0;
+    }
+}
+
+static void Mz_Tick(u32 now_ms)
+{
+    u8  st0;
+    u16 steps0;
+    u32 sec0;
+    u16 cell;
+
+    st0 = MAZE_GetState();
+    steps0 = MAZE_GetSteps();
+    sec0 = MAZE_GetElapsedMs() / 1000UL;
+
+    MAZE_Tick(now_ms);
+
+    if (MAZE_GetState() != st0)
+    {
+        if (MAZE_GetState() == MAZE_WIN || MAZE_GetState() == MAZE_PAUSED)
+        {
+            s_mz_full = 1;
+            MAZE_ClearDirty();
+            UI_MarkDirty();
+            return;
+        }
+    }
+
+    if (s_mz_full)
+    {
+        MAZE_ClearDirty();
+        return;
+    }
+
+    /* 正常走一步: 只重画旧格/新格 */
+    while (MAZE_PopDirtyCell(&cell))
+    {
+        Mz_DrawCell(cell);
+    }
+
+    /* 步数/秒数变化时只重画顶部 HUD */
+    if (MAZE_GetSteps() != steps0 ||
+        (MAZE_GetElapsedMs() / 1000UL) != sec0)
+    {
+        Mz_DrawHud();
+    }
+}
+
 /*============================== Snake =====================================*/
-/* 拓展6 / 开机长按 START 3 秒的彩蛋。
+/* 最后一页 / 从 MAZE 页点 SNAKE 进入。
  *
  * 布局(竖屏 240x320, 进入本页时隐藏底部导航条):
  *   y=0..21    状态栏: 标题 SNAKE + 状态 + 分数 + 长度 + 上限
@@ -1757,5 +2224,6 @@ const UI_PageOps g_ui_pages[PAGE_COUNT] =
     { 0,            0,           Stopwatch_Draw, Stopwatch_Event, Stopwatch_Tick }, /* TIMER */
     { 0,            0,           Sweep_Draw,     Sweep_Event,    Sweep_Tick }, /* SWEEP */
     { 0,            0,           Spwm_Draw,      Spwm_Event,     0          }, /* SPWM */
+    { Mz_Enter,     Mz_Leave,    Mz_Draw,        Mz_Event,       Mz_Tick    }, /* MAZE */
     { Snake_Enter,   Snake_Leave,  Snake_Draw,    Snake_Event,    Snake_Tick }  /* SNAKE */
 };

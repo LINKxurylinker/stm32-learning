@@ -39,7 +39,7 @@
 
 /* 开机画面/触摸校准/长按彩蛋 */
 #define BOOT_SPLASH_TIMEOUT_MS      0UL     /* 0=不自动跳页, 等用户点; >0=超时自动继续 */
-#define BOOT_LONG_PRESS_MS          3000UL  /* 长按 START 3 秒 -> 贪吃蛇 */
+#define BOOT_LONG_PRESS_MS          3000UL  /* 长按 START 3 秒 -> 迷宫 */
 #define BOOT_TOUCH_DEBUG            1       /* 1=开始界面底部显示 CAL/TP 坐标, 排查触摸 */
 #define BOOT_FORCE_CALIB            0       /* 1=每次开机都强制四点校准 (调试用) */
 
@@ -197,7 +197,7 @@
 #define SPWM_AMP_PCT                90      /* 调制深度, 100 会削顶 */
 
 /*==============================================================================
- * 9. 贪吃蛇 (拓展6 / 开机长按 START 3 秒的彩蛋)
+ * 9. 贪吃蛇 (最后一页)
  *-----------------------------------------------------------------------------
  * 屏幕 240x320, 全屏游戏时:
  *   顶部状态栏 22px + 棋盘 20*11=220px + 底部两排按键 2*31px + 间距 = 320px。
@@ -217,19 +217,44 @@
 #define SNAKE_KEYS_ENABLE           1       /* 1=用 KEY0/1/2/WK_UP 控制方向 */
 
 /*==============================================================================
+ * 9b. 迷宫 (开机长按 START 3 秒的彩蛋)
+ *-----------------------------------------------------------------------------
+ * 21x21 格, 每格 10px, 棋盘 210x210; 奇数坐标是通道, 偶数坐标是墙。
+ * 起点 (1,1), 出口 (19,19); 用迭代 DFS 生成, A* 自动求最短路径。
+ *============================================================================*/
+#define MAZE_GRID_W                 21      /* 必须是奇数 */
+#define MAZE_GRID_H                 21
+#define MAZE_CELL_PX                10      /* 21*10=210, 两侧各留 15px */
+#define MAZE_AUTO_STEP_MS           90      /* A* 回放: 每 90ms 走一格 */
+#define MAZE_AUTO_DEFAULT           0       /* 开机默认手动 */
+#define MAZE_KEYS_ENABLE            1       /* 1=用 KEY0/1/2/WK_UP 控制方向 */
+
+/*==============================================================================
  * 10. UI 颜色 (RGB565)
  *============================================================================*/
-#define UI_COLOR_BG                 0x0000  /* 黑底 */
+#define UI_COLOR_BG                 PIX_WOOD_DARK /*木底 */
 #define UI_COLOR_PANEL              0x18E3  /* 深灰面板 */
 #define UI_COLOR_PANEL_HI           0x2D6B  /* 高亮面板 */
 #define UI_COLOR_BORDER             0x5ACB  /* 边框 */
-#define UI_COLOR_TEXT               0xFFFF  /* 白字 */
+#define UI_COLOR_TEXT               0xF7BE  /* 白字 */
 #define UI_COLOR_MUTED              0x8410  /* 灰字 */
 #define UI_COLOR_VALUE              0x07FF  /* 青色: 实际生效值 */
 #define UI_COLOR_EDIT               0xFFE0  /* 黄色: 正在编辑/未确认值 */
 #define UI_COLOR_OK                 0x07E0  /* 绿色 */
 #define UI_COLOR_ERR                0xF800  /* 红色 */
 #define UI_COLOR_ACCENT             0xFD20  /* 橙色 */
+/* 星露谷像素风 */
+#define PIX_WOOD_DARK    0x28C1   /* 深木色背景 */
+#define PIX_WOOD_SEAM    0x1860   /* 木板缝 */
+#define PIX_WOOD_MID     0x4963   /* 中木色 */
+#define PIX_WOOD_LIGHT   0x8AC6   /* 亮木边 */
+#define PIX_PARCHMENT    0xEE51   /* 羊皮纸 */
+#define PIX_CREAM        0xF717   /* 米白文字 */
+#define PIX_DARK_TEXT    0x3922   /* 深棕文字 */
+#define PIX_GOLD         0xDD28   /* 金色边框 */
+#define PIX_GREEN        0x6CE9   /* 绿色 */
+#define PIX_DEEP_GREEN   0x3B46   /* 深绿 */
+#define PIX_RED          0xB247   /* 红色 */
 
 /*==============================================================================
  * 11. UI 字体与刷新

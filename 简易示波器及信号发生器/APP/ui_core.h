@@ -14,6 +14,7 @@ typedef enum
     PAGE_STOPWATCH,
     PAGE_SWEEP,
     PAGE_SPWM,
+    PAGE_MAZE,
     PAGE_SNAKE,
     PAGE_COUNT
 } UI_PageId;
@@ -99,6 +100,7 @@ u8   UI_HitTest(const UI_Rect *r, u16 x, u16 y);
 
 /* 通用控件 (显示部分留给你画) */
 void UI_DrawButton(const UI_Rect *r, const char *label, u8 pressed);
+void UI_DrawPixelBackground(void);
 void UI_DrawStatusBar(const char *title);
 
 /* 键盘 */

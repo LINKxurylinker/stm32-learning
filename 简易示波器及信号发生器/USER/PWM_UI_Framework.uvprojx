@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\CORE;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\USER;..\FWLIB\inc;..\HARDWARE\tftlcd;..\HARDWARE\touch;..\HARDWARE\24Cxx;..\HARDWARE\iic;..\HARDWARE\led;..\APP</IncludePath>
+              <IncludePath>..\CORE;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\USER;..\FWLIB\inc;..\HARDWARE\tftlcd;..\HARDWARE\touch;..\HARDWARE\24Cxx;..\HARDWARE\iic;..\HARDWARE\mpu6050;..\APP</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -696,6 +696,16 @@
               <FilePath>..\HARDWARE\iic\iic.h</FilePath>
             </File>
             <File>
+              <FileName>mpu6050.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\mpu6050\mpu6050.c</FilePath>
+            </File>
+            <File>
+              <FileName>mpu6050.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\HARDWARE\mpu6050\mpu6050.h</FilePath>
+            </File>
+            <File>
               <FileName>font.H</FileName>
               <FileType>5</FileType>
               <FilePath>..\HARDWARE\tftlcd\font.H</FilePath>
@@ -719,6 +729,11 @@
               <FileName>app_main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\APP\app_main.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_maze.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APP\app_maze.c</FilePath>
             </File>
             <File>
               <FileName>app_snake.c</FileName>
@@ -774,6 +789,11 @@
               <FileName>app_main.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\APP\app_main.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_maze.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\APP\app_maze.h</FilePath>
             </File>
             <File>
               <FileName>app_snake.h</FileName>
