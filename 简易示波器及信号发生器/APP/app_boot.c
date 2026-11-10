@@ -52,7 +52,7 @@
 #define BOOT_LEAF_X_MIN     16
 #define BOOT_LEAF_X_MAX     214
 #define BOOT_LEAF_Y_MIN     104
-#define BOOT_LEAF_Y_MAX     166
+#define BOOT_LEAF_Y_MAX     148
 
 /* 1=显示 START/CAL 的边框和长按进度条, 方便先对位置。
  * 你自己的 UI 画好后改成 0, 就不会再画这些参考框。 */
