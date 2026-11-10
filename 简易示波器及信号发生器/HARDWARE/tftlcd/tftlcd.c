@@ -4162,11 +4162,11 @@ void LCD_ShowPicture(u16 x, u16 y, u16 wide, u16 high,u8 *pic)
 }
 
 /*
- * ?? 12x12 ??/??
- * x, y : ?????????
- * index: ??????(?????,0~94)
- * color: ????
- * back : ????
+ * 显示 12x12 汉字/字符
+ * x, y : 起始坐标
+ * index: 汉字索引(在字库中, 0~94)
+ * color: 前景色
+ * back : 背景色
  */
 void LCD_ShowChinese12x12(u16 x, u16 y, u8 index, u16 color, u16 back)
 {
@@ -4189,12 +4189,12 @@ void LCD_ShowChinese12x12(u16 x, u16 y, u8 index, u16 color, u16 back)
 
             if (bit_val)
             {
-                FRONT_COLOR = color;       // ?????
-                LCD_DrawPoint(x + i, y + j); // ??
+                FRONT_COLOR = color;       // 设置前景色
+                LCD_DrawPoint(x + i, y + j); // 画点
             }
             else
             {
-                FRONT_COLOR = back;        // ?????
+                FRONT_COLOR = back;        // 设置背景色
                 LCD_DrawPoint(x + i, y + j); 
             }
         }
