@@ -1,0 +1,11 @@
+# Keil build output (keep the folder, ignore the intermediates)
+OBJ/*
+!OBJ/.gitkeep
+
+# Keil user/IDE state
+*.uvguix.*
+*.uvoptx
+*.uvprojx.bak
+
+# local logs
+build*.log
