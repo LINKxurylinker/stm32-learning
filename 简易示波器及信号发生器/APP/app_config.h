@@ -32,7 +32,7 @@
  *============================================================================*/
 #define APP_ENABLE_PHASE            1   /* 拓展1: 双通道相位 */
 #define APP_ENABLE_SPWM             1   /* 拓展4: SPWM 50Hz */
-#define APP_ENABLE_EXT500K          1   /* 拓展5: 500kHz 扩展 */
+#define APP_ENABLE_EXT500K          0   /* 基础要求: 200kHz / 1% 档 */
 
 #define APP_DEBUG_UART              1   /* 串口打印调试信息 */
 #define APP_DEBUG_PERIODIC          0   /* 1=每秒打印一次(会拖慢UI), 演示时建议0 */

@@ -96,10 +96,14 @@ void UI_NumPadColor(u16 x, u16 y, u32 num, u8 len, u8 size,
                     u16 fg, u16 bg);
 void UI_Fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color);
 void UI_Frame(u16 x1, u16 y1, u16 x2, u16 y2, u16 color);
+void UI_FillRound(u16 x1, u16 y1, u16 x2, u16 y2, u8 radius, u16 color);
+void UI_FrameRound(u16 x1, u16 y1, u16 x2, u16 y2, u8 radius, u16 color);
 u8   UI_HitTest(const UI_Rect *r, u16 x, u16 y);
 
 /* 通用控件 (显示部分留给你画) */
 void UI_DrawButton(const UI_Rect *r, const char *label, u8 pressed);
+void UI_DrawButtonEx(const UI_Rect *r, const char *label, u8 pressed, u16 outside);
+void UI_DrawCircleButton(const UI_Rect *r, const char *label, u8 pressed, u16 outside);
 void UI_DrawPixelBackground(void);
 void UI_DrawStatusBar(const char *title);
 

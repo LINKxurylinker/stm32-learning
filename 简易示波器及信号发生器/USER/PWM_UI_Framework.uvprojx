@@ -726,6 +726,16 @@
               <FilePath>..\APP\app_boot.c</FilePath>
             </File>
             <File>
+              <FileName>ui_hanzi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APP\ui_hanzi.c</FilePath>
+            </File>
+            <File>
+              <FileName>ui_hanzi.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\APP\ui_hanzi.h</FilePath>
+            </File>
+            <File>
               <FileName>app_main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\APP\app_main.c</FilePath>

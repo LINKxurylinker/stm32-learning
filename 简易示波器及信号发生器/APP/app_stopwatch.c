@@ -24,8 +24,10 @@ void STOPWATCH_Init(void)
 {
     g_sw.running     = 0;
     g_sw.lap_count   = 0;
+    g_sw.record_count = 0;
     g_sw.base_ms     = 0;
     g_sw.start_ms    = 0;
+    g_sw.current_lap_ms = 0;
     g_sw.lap_start_ms = 0;
     g_sw.lap_ms      = 0;
     g_sw.split_ms    = 0;
@@ -58,10 +60,13 @@ void STOPWATCH_Init(void)
  *----------------------------------------------------------------------------*/
 void STOPWATCH_Start(void)
 {
+    u32 now;
+
     if (g_sw.running) return;
 
-    g_sw.start_ms = TICK_Now();
-    g_sw.lap_start_ms = g_sw.start_ms;
+    now = TICK_Now();
+    g_sw.start_ms = now;
+    g_sw.lap_start_ms = now - g_sw.current_lap_ms;
     g_sw.running = 1;
 }
 
@@ -72,6 +77,7 @@ void STOPWATCH_Pause(void)
     if (!g_sw.running) return;
 
     now = TICK_Now();
+    g_sw.current_lap_ms = (u32)(now - g_sw.lap_start_ms);
     g_sw.base_ms += (u32)(now - g_sw.start_ms);
     g_sw.running = 0;
 }
@@ -80,8 +86,10 @@ void STOPWATCH_Reset(void)
 {
     g_sw.running = 0;
     g_sw.lap_count = 0;
+    g_sw.record_count = 0;
     g_sw.base_ms = 0;
     g_sw.start_ms = 0;
+    g_sw.current_lap_ms = 0;
     g_sw.lap_start_ms = 0;
     g_sw.lap_ms = 0;
     g_sw.split_ms = 0;
@@ -98,7 +106,47 @@ void STOPWATCH_Lap(void)
     g_sw.lap_ms = (u32)(now - g_sw.lap_start_ms);
     g_sw.split_ms = g_sw.base_ms + (u32)(now - g_sw.start_ms);
     g_sw.lap_start_ms = now;
+    g_sw.current_lap_ms = 0;
     g_sw.lap_count++;
+}
+
+/* 记录一次成绩: 只记录运行中的当前总时间, 自动按从小到大排名, 最多 12 条。 */
+void STOPWATCH_Record(void)
+{
+    u32 t;
+    u8 i;
+
+    if (!g_sw.running) return;
+
+    t = STOPWATCH_ElapsedMs();
+
+    if (g_sw.record_count < STOPWATCH_MAX_RECORDS)
+    {
+        g_sw.record_count++;
+    }
+    else if (t >= g_sw.records[STOPWATCH_MAX_RECORDS - 1])
+    {
+        return;
+    }
+
+    i = (u8)(g_sw.record_count - 1);
+    while (i > 0 && g_sw.records[i - 1] > t)
+    {
+        g_sw.records[i] = g_sw.records[i - 1];
+        i--;
+    }
+    g_sw.records[i] = t;
+}
+
+u8 STOPWATCH_RecordCount(void)
+{
+    return g_sw.record_count;
+}
+
+u32 STOPWATCH_RecordMs(u8 index)
+{
+    if (index >= g_sw.record_count) return 0;
+    return g_sw.records[index];
 }
 
 /* 实时总时间: 运行中 = 暂停前累计 + 本次已跑; 暂停 = 累计值。
@@ -110,6 +158,15 @@ u32 STOPWATCH_ElapsedMs(void)
         return g_sw.base_ms + (u32)(TICK_Now() - g_sw.start_ms);
     }
     return g_sw.base_ms;
+}
+
+u32 STOPWATCH_CurrentLapMs(void)
+{
+    if (g_sw.running)
+    {
+        return (u32)(TICK_Now() - g_sw.lap_start_ms);
+    }
+    return g_sw.current_lap_ms;
 }
 
 u32 STOPWATCH_LapMs(void)

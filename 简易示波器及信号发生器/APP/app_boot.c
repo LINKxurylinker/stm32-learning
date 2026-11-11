@@ -5,6 +5,7 @@
 #include "tftlcd.h"
 #include "touch.h"
 #include "ui_core.h"
+#include "ui_hanzi.h"
 
 #if APP_DEBUG_UART
 #include "usart.h"
@@ -53,6 +54,18 @@
 #define BOOT_LEAF_X_MAX     214
 #define BOOT_LEAF_Y_MIN     104
 #define BOOT_LEAF_Y_MAX     148
+
+/* 羊皮纸上层内嵌水槽 */
+#define BOOT_WATER_X        20
+#define BOOT_WATER_Y        102
+#define BOOT_WATER_W        200
+#define BOOT_WATER_H        46
+#define BOOT_WATER_COUNT    18
+
+#define PIX_WATER_DARK      0x09EB
+#define PIX_WATER_MID       0x1371
+#define PIX_WATER_LIGHT     0x2D37
+#define PIX_WATER_FOAM      0xEFFF
 
 /* 1=显示 START/CAL 的边框和长按进度条, 方便先对位置。
  * 你自己的 UI 画好后改成 0, 就不会再画这些参考框。 */
@@ -465,29 +478,178 @@ static void Boot_LeavesTick(void)
     }
 }
 
+/*------------------------------ 内嵌水槽 --------------------------------*/
+typedef struct
+{
+    s16 x;
+    s16 y;
+    s8  vx;
+    u8  phase;
+    u16 color;
+} BootWater;
+
+static BootWater s_water[BOOT_WATER_COUNT];
+static u32 s_water_last_ms = 0;
+
+static void Boot_WaterPaint(const BootWater *p, u16 color)
+{
+    if (p->x >= (BOOT_WATER_X + 2) &&
+        p->x <= (BOOT_WATER_X + BOOT_WATER_W - 4) &&
+        p->y >= (BOOT_WATER_Y + 14) &&
+        p->y <= (BOOT_WATER_Y + BOOT_WATER_H - 9))
+    {
+        UI_Fill((u16)p->x, (u16)p->y,
+                (u16)(p->x + 1), (u16)p->y, color);
+    }
+}
+
+static void Boot_WaterReset(BootWater *p, u8 initial)
+{
+    p->x = (s16)(BOOT_WATER_X + 3 +
+                 (Boot_StarRand() % (BOOT_WATER_W - 10)));
+    p->y = initial
+           ? (s16)(BOOT_WATER_Y + 16 +
+                   (Boot_StarRand() % (BOOT_WATER_H - 24)))
+           : (s16)(BOOT_WATER_Y + 16 +
+                   (Boot_StarRand() % 8));
+
+    p->vx = (s8)(1 + (Boot_StarRand() & 1));
+    p->phase = (u8)Boot_StarRand();
+    p->color = (Boot_StarRand() & 3) ? PIX_WATER_LIGHT : PIX_WATER_FOAM;
+}
+
+static void Boot_DrawWaterFrame(void)
+{
+    u16 x;
+    u16 wy;
+
+    /* 外框阴影 */
+    UI_FillRound(BOOT_WATER_X - 2, BOOT_WATER_Y - 2,
+                 BOOT_WATER_X + BOOT_WATER_W + 1,
+                 BOOT_WATER_Y + BOOT_WATER_H + 1,
+                 10, PIX_WOOD_SEAM);
+
+    /* 木质外框 */
+    UI_FillRound(BOOT_WATER_X - 1, BOOT_WATER_Y - 1,
+                 BOOT_WATER_X + BOOT_WATER_W,
+                 BOOT_WATER_Y + BOOT_WATER_H,
+                 10, PIX_WOOD_MID);
+
+    /* 水体 */
+    UI_FillRound(BOOT_WATER_X, BOOT_WATER_Y,
+                 BOOT_WATER_X + BOOT_WATER_W - 1,
+                 BOOT_WATER_Y + BOOT_WATER_H - 1,
+                 8, PIX_WATER_DARK);
+
+    /* 上层水面 */
+    UI_Fill(BOOT_WATER_X + 6, BOOT_WATER_Y + 2,
+            BOOT_WATER_X + BOOT_WATER_W - 7,
+            BOOT_WATER_Y + 8,
+            PIX_WATER_MID);
+
+    /* 水面波光 */
+    for (x = BOOT_WATER_X + 4; x < BOOT_WATER_X + BOOT_WATER_W - 8; x += 12)
+    {
+        wy = (u16)(BOOT_WATER_Y + 6 + (((x / 12) & 1) ? 2 : 0));
+        UI_Fill(x, wy, (u16)(x + 6), wy, PIX_WATER_LIGHT);
+    }
+
+    /* 水底 */
+    UI_Fill(BOOT_WATER_X + 8, BOOT_WATER_Y + BOOT_WATER_H - 7,
+            BOOT_WATER_X + BOOT_WATER_W - 7,
+            BOOT_WATER_Y + BOOT_WATER_H - 3,
+            PIX_WATER_MID);
+
+    /* 内嵌金边 */
+    UI_FrameRound(BOOT_WATER_X, BOOT_WATER_Y,
+                  BOOT_WATER_X + BOOT_WATER_W - 1,
+                  BOOT_WATER_Y + BOOT_WATER_H - 1,
+                  8, PIX_GOLD);
+
+    UI_FrameRound(BOOT_WATER_X + 2, BOOT_WATER_Y + 2,
+             BOOT_WATER_X + BOOT_WATER_W - 7,
+                  BOOT_WATER_Y + BOOT_WATER_H - 3,
+                  6, PIX_WOOD_DARK);
+}
+
+static void Boot_WaterInit(void)
+{
+    u8 i;
+
+    Boot_DrawWaterFrame();
+
+    s_water_last_ms = TICK_Now();
+
+    for (i = 0; i < BOOT_WATER_COUNT; i++)
+    {
+        Boot_WaterReset(&s_water[i], 1);
+        Boot_WaterPaint(&s_water[i], s_water[i].color);
+    }
+}
+
+static void Boot_WaterTick(void)
+{
+    u8 i;
+    u32 now = TICK_Now();
+
+    if ((u32)(now - s_water_last_ms) < 60)
+    {
+        return;
+    }
+
+    s_water_last_ms = now;
+
+    for (i = 0; i < BOOT_WATER_COUNT; i++)
+    {
+        Boot_WaterPaint(&s_water[i], PIX_WATER_DARK);
+
+        s_water[i].x = (s16)(s_water[i].x + s_water[i].vx);
+        s_water[i].phase++;
+
+        if (s_water[i].phase & 2)
+        {
+            s_water[i].y++;
+        }
+        else
+        {
+            s_water[i].y--;
+        }
+
+        if (s_water[i].y < (BOOT_WATER_Y + 14))
+        {
+            s_water[i].y = (s16)(BOOT_WATER_Y + 14);
+        }
+        if (s_water[i].y > (BOOT_WATER_Y + BOOT_WATER_H - 9))
+        {
+            s_water[i].y = (s16)(BOOT_WATER_Y + BOOT_WATER_H - 9);
+        }
+
+        if (s_water[i].x > (BOOT_WATER_X + BOOT_WATER_W - 4))
+        {
+            Boot_WaterReset(&s_water[i], 0);
+        }
+
+        Boot_WaterPaint(&s_water[i], s_water[i].color);
+    }
+}
+
 /*------------------------------ 画面 --------------------------------------*/
 static void Boot_DrawParchmentPanel(void)
 {
     /* 阴影 */
-    UI_Fill(14, 100, 227, 262, PIX_WOOD_SEAM);
+    UI_FillRound(14, 100, 227, 262, 14, PIX_WOOD_SEAM);
 
     /* 羊皮纸面板 */
-    UI_Fill(10, 96, 223, 258, PIX_PARCHMENT);
+    UI_FillRound(10, 96, 223, 258, 12, PIX_PARCHMENT);
 
     /* 上沿高光 */
-    UI_Fill(10, 96, 223, 99, PIX_CREAM);
+    UI_Fill(22, 96, 211, 99, PIX_CREAM);
 
     /* 下沿阴影 */
-    UI_Fill(10, 255, 223, 258, PIX_WOOD_MID);
+    UI_Fill(22, 255, 211, 258, PIX_WOOD_MID);
 
-    /* 金色边框 */
-    UI_Frame(10, 96, 223, 258, PIX_GOLD);
-
-    /* 像素切角 */
-    UI_Fill(10, 96, 13, 99, PIX_WOOD_DARK);
-    UI_Fill(220, 96, 223, 99, PIX_WOOD_DARK);
-    UI_Fill(10, 255, 13, 258, PIX_WOOD_DARK);
-    UI_Fill(220, 255, 223, 258, PIX_WOOD_DARK);
+    /* 金色圆角边框 */
+    UI_FrameRound(10, 96, 223, 258, 12, PIX_GOLD);
 }
 
 static void Boot_DrawProgress(u32 held_ms)
@@ -498,23 +660,23 @@ static void Boot_DrawProgress(u32 held_ms)
 
     w = (u16)((held_ms * (u32)BOOT_START_W) / BOOT_LONG_PRESS_MS);
 
-    UI_Fill(BOOT_START_X, BOOT_PROGRESS_Y,
-            (u16)(BOOT_START_X + BOOT_START_W - 1),
-            (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-            PIX_WOOD_DARK);
+    UI_FillRound(BOOT_START_X, BOOT_PROGRESS_Y,
+                 (u16)(BOOT_START_X + BOOT_START_W - 1),
+                 (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
+                 4, PIX_WOOD_DARK);
 
     if (w > 0)
     {
-        UI_Fill(BOOT_START_X, BOOT_PROGRESS_Y,
-                (u16)(BOOT_START_X + w - 1),
-                (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-                PIX_GREEN);
+        UI_FillRound(BOOT_START_X, BOOT_PROGRESS_Y,
+                     (u16)(BOOT_START_X + w - 1),
+                     (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
+                     4, PIX_GREEN);
     }
 
-    UI_Frame(BOOT_START_X, BOOT_PROGRESS_Y,
-             (u16)(BOOT_START_X + BOOT_START_W - 1),
-             (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
-             PIX_GOLD);
+    UI_FrameRound(BOOT_START_X, BOOT_PROGRESS_Y,
+                  (u16)(BOOT_START_X + BOOT_START_W - 1),
+                  (u16)(BOOT_PROGRESS_Y + BOOT_PROGRESS_H - 1),
+                  4, PIX_GOLD);
 }
 
 static void Boot_ClearProgress(void)
@@ -539,25 +701,24 @@ static void Boot_DrawTouchStatus(u8 calibrated, u8 pressed, u16 x, u16 y)
 static void Boot_DrawStartBox(void)
 {
     /* 牛皮纸中间的木质开始框: 深木底 + 金边 + 米白 START */
-    UI_Fill(s_start_rect.x, s_start_rect.y,
-            (u16)(s_start_rect.x + s_start_rect.w - 1),
-            (u16)(s_start_rect.y + s_start_rect.h - 1),
-            PIX_WOOD_MID);
+    UI_FillRound(s_start_rect.x, s_start_rect.y,
+                 (u16)(s_start_rect.x + s_start_rect.w - 1),
+                 (u16)(s_start_rect.y + s_start_rect.h - 1),
+                 10, PIX_WOOD_MID);
 
-    UI_Frame(s_start_rect.x, s_start_rect.y,
-             (u16)(s_start_rect.x + s_start_rect.w - 1),
-             (u16)(s_start_rect.y + s_start_rect.h - 1),
-             PIX_GOLD);
+    UI_FrameRound(s_start_rect.x, s_start_rect.y,
+                  (u16)(s_start_rect.x + s_start_rect.w - 1),
+                  (u16)(s_start_rect.y + s_start_rect.h - 1),
+                  10, PIX_GOLD);
 
-    UI_Frame((u16)(s_start_rect.x + 2), (u16)(s_start_rect.y + 2),
-             (u16)(s_start_rect.x + s_start_rect.w - 3),
-             (u16)(s_start_rect.y + s_start_rect.h - 3),
-             PIX_WOOD_DARK);
+    UI_FrameRound((u16)(s_start_rect.x + 2), (u16)(s_start_rect.y + 2),
+                  (u16)(s_start_rect.x + s_start_rect.w - 3),
+                  (u16)(s_start_rect.y + s_start_rect.h - 3),
+                  8, PIX_WOOD_DARK);
 
-    UI_TextColor((u16)(s_start_rect.x + (s_start_rect.w - 60) / 2),
-                 (u16)(s_start_rect.y + (s_start_rect.h - UI_FONT_L) / 2),
-                 60, UI_FONT_L, UI_FONT_L,
-                 PIX_CREAM, PIX_WOOD_MID, "START");
+    UI_HZ16_TextScaled((u16)(s_start_rect.x + (s_start_rect.w - 128) / 2),
+                       (u16)(s_start_rect.y + (s_start_rect.h - 32) / 2),
+                       "开始探险", PIX_CREAM, PIX_WOOD_MID, 2);
 }
 
 static void Boot_DrawSplash(u8 calibrated)
@@ -569,10 +730,13 @@ static void Boot_DrawSplash(u8 calibrated)
     Boot_StarsInit();
     Boot_CatInit();
     Boot_DrawParchmentPanel();
-    Boot_LeavesInit();
+    Boot_WaterInit();
 
     Boot_DrawStartBox();
-    UI_DrawButton(&s_calib_rect, "CAL", 0);
+    UI_DrawButtonEx(&s_calib_rect, "", 0, BOOT_STAR_SKY);
+    UI_HZ16_Text((u16)(s_calib_rect.x + (s_calib_rect.w - 32) / 2),
+                 (u16)(s_calib_rect.y + (s_calib_rect.h - 16) / 2),
+                 "校准", UI_COLOR_TEXT, UI_COLOR_PANEL);
 
 #if BOOT_UI_GUIDES
     /* 临时参考框: 只画交互区域, 不画旧版文字。 */
@@ -645,7 +809,7 @@ static u8 Boot_WaitAction(void)
 #endif
 
         Boot_StarsTick();
-        Boot_LeavesTick();
+        Boot_WaterTick();
         Boot_CatTick();
 
         if (pressed)
