@@ -1933,6 +1933,8 @@ static void Stopwatch_Draw(void)
 {
 
     u8 running;
+    u16 cx;
+    u16 cy;
 
 
 
@@ -1982,8 +1984,13 @@ static void Stopwatch_Draw(void)
 
     if (!s_sw_btns_valid || running != s_sw_btn_running)
     {
-        UI_DrawCircleButton(&s_sw_start,
-                            running ? "暂停" : "开始", 0, UI_COLOR_BG);
+        cx = (u16)(s_sw_start.x + s_sw_start.w / 2);
+        cy = (u16)(s_sw_start.y + s_sw_start.h / 2);
+
+        UI_DrawCircleButton(&s_sw_start, "", 0, UI_COLOR_BG);
+        if (running) UI_DrawPauseIcon(cx, cy, UI_COLOR_TEXT);
+        else         UI_DrawPlayIcon(cx, cy, UI_COLOR_TEXT);
+
         UI_DrawCircleButton(&s_sw_lap, "计圈", 0, UI_COLOR_BG);
         UI_DrawCircleButton(&s_sw_reset, "复位", 0, UI_COLOR_BG);
         s_sw_btns_valid = 1;

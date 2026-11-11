@@ -104,6 +104,8 @@ u8   UI_HitTest(const UI_Rect *r, u16 x, u16 y);
 void UI_DrawButton(const UI_Rect *r, const char *label, u8 pressed);
 void UI_DrawButtonEx(const UI_Rect *r, const char *label, u8 pressed, u16 outside);
 void UI_DrawCircleButton(const UI_Rect *r, const char *label, u8 pressed, u16 outside);
+void UI_DrawPlayIcon(u16 cx, u16 cy, u16 color);
+void UI_DrawPauseIcon(u16 cx, u16 cy, u16 color);
 void UI_DrawPixelBackground(void);
 void UI_DrawStatusBar(const char *title);
 
