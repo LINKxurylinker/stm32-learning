@@ -1,0 +1,34 @@
+# Keil build outputs / local logs / user layout
+**/OBJ/
+*.log
+*.map
+*.lst
+*.o
+*.d
+*.axf
+*.hex
+*.bin
+*.uvguix*
+*.uvoptx*
+*.bak
+*.packbak
+*.predsp.bak
+*.adcbak
+*.landbak
+*.full.bak
+
+# Archives / course media not needed in source repo
+*.7z
+*.pptx
+
+# Local experiments / backups
+**/.wavefix_backup_*/
+.tmp_*
+
+# Screenshots and preview images
+**/UI预览/
+
+# Third-party installers and separate framework copies
+vofa/
+vofa.7z
+示波器代码框架/
